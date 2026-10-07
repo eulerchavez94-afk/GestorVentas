@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#111827" />
+  <title>Gestor de Ventas</title>
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    :root{
+      --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#f8fafc;
+      --card:#1f2937; --accent:#22c55e; --danger:#ef4444; --warn:#f59e0b;
+      --line:#334155;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+    button,input,select{font:inherit}
+    .wrap{max-width:1100px;margin:auto;padding:16px}
+    .top{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    .brand{font-size:1.35rem;font-weight:800}
+    .badge{padding:6px 10px;border-radius:999px;background:#0b1220;color:#cbd5e1}
+    .nav{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:16px 0}
+    .nav button,.btn{border:0;border-radius:12px;padding:12px;background:var(--card);color:var(--text);cursor:pointer}
+    .nav button.active{outline:2px solid var(--accent)}
+    .btn.primary{background:var(--accent);color:#052e16;font-weight:800}
+    .btn.danger{background:var(--danger);color:white}
+    .btn.warn{background:var(--warn);color:#111827}
+    .grid{display:grid;gap:12px}
+    .grid.two{grid-template-columns:1fr 1fr}
+    .grid.three{grid-template-columns:repeat(3,1fr)}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px}
+    .card h3{margin-top:0}
+    .stat{font-size:1.7rem;font-weight:800}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    input,select{width:100%;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:11px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
+    .product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+    .product{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;cursor:pointer}
+    .product:hover{border-color:var(--accent)}
+    .hidden{display:none!important}
+    .right{text-align:right}
+    .login{max-width:420px;margin:10vh auto;background:var(--panel);padding:20px;border-radius:18px;border:1px solid var(--line)}
+    .small{font-size:.9rem}
+    .pill{padding:4px 8px;border-radius:999px;background:#0b1220}
+    @media(max-width:760px){
+      .nav{grid-template-columns:repeat(3,1fr)}
+      .grid.two,.grid.three{grid-template-columns:1fr}
+      table{font-size:.9rem}
+    }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const DB_KEY='gv_pwa_v1';
+const nowDate=()=>new Date().toISOString().slice(0,10);
+const money=n=>'$'+Number(n||0).toFixed(2);
+
+const defaultDB={
+  store:{name:'Mi Tienda',currency:'$'},
+  users:[
+    {id:1,name:'Dueño',role:'owner',pin:'1234'},
+    {id:2,name:'Trabajador',role:'worker',pin:'1111'}
+  ],
+  products:[
+    {id:1,name:'Refresco',category:'Bebidas',cost:0.70,price:1.50,stock:50,minStock:10,active:true},
+    {id:2,name:'Cigarro',category:'Otros',cost:3.00,price:5.00,stock:30,minStock:5,active:true},
+    {id:3,name:'Picadillo',category:'Alimentos',cost:2.00,price:3.50,stock:25,minStock:5,active:true}
+  ],
+  sales:[],
+  cashSessions:[],
+  customers:[],
+  inventoryMoves:[]
+};
+let db=loadDB();
+let session={user:null,cart:[]};
+
+function loadDB(){
+  try{return JSON.parse(localStorage.getItem(DB_KEY))||structuredClone(defaultDB)}
+  catch(e){return structuredClone(defaultDB)}
+}
+function saveDB(){localStorage.setItem(DB_KEY,JSON.stringify(db));}
+function activeCash(){return [...db.cashSessions].reverse().find(x=>!x.closedAt)}
+function byId(arr,id){return arr.find(x=>x.id==id)}
+function uid(){return Date.now()+Math.floor(Math.random()*1000)}
+
+function render(){
+  const app=document.getElementById('app');
+  if(!session.user){app.innerHTML=loginHTML(); bindLogin(); return}
+  app.innerHTML=mainHTML();
+  bindMain();
+}
+function loginHTML(){
+return `<div class="login">
+  <h2>Gestor de Ventas</h2>
+  <p class="muted">Acceso local y offline</p>
+  <label>Usuario</label>
+  <select id="userSel">${db.users.map(u=>`<option value="${u.id}">${u.name} · ${u.role==='owner'?'Dueño':'Trabajador'}</option>`).join('')}</select>
+  <br><br><label>PIN</label><input id="pin" type="password" inputmode="numeric" placeholder="PIN">
+  <br><br><button class="btn primary" id="loginBtn">Entrar</button>
+  <p class="small muted">Demo: Dueño 1234 · Trabajador 1111</p>
+</div>`;
+}
+function bindLogin(){
+  document.getElementById('loginBtn').onclick=()=>{
+    const u=byId(db.users,+document.getElementById('userSel').value);
+    if(u && document.getElementById('pin').value===u.pin){session.user=u;render()} else alert('PIN incorrecto');
+  }
+}
+function mainHTML(){
+  return `<div class="wrap">
+    <div class="top">
+      <div><div class="brand">${db.store.name}</div><div class="muted small">${session.user.name} · ${session.user.role==='owner'?'Dueño':'Trabajador'}</div></div>
+      <div class="row"><span class="badge">${activeCash()?'Caja abierta':'Caja cerrada'}</span><button class="btn" id="logout">Salir</button></div>
+    </div>
+    <div class="nav">
+      <button data-tab="home" class="active">Inicio</button>
+      <button data-tab="sale">Venta</button>
+      <button data-tab="inventory">Inventario</button>
+      <button data-tab="cash">Caja</button>
+      <button data-tab="customers">Clientes</button>
+      <button data-tab="reports">Reportes</button>
+    </div>
+    <section id="home">${homeHTML()}</section>
+    <section id="sale" class="hidden">${saleHTML()}</section>
+    <section id="inventory" class="hidden">${inventoryHTML()}</section>
+    <section id="cash" class="hidden">${cashHTML()}</section>
+    <section id="customers" class="hidden">${customersHTML()}</section>
+    <section id="reports" class="hidden">${reportsHTML()}</section>
+  </div>`;
+}
+function bindMain(){
+  document.getElementById('logout').onclick=()=>{session={user:null,cart:[]};render()}
+  document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('section').forEach(s=>s.classList.add('hidden'));
+    document.getElementById(b.dataset.tab).classList.remove('hidden');
+  });
+  bindSale(); bindInventory(); bindCash(); bindCustomers(); bindReports();
+}
+function todaySales(){
+  const d=nowDate(); return db.sales.filter(s=>s.date===d);
+}
+function homeHTML(){
+  const sales=todaySales();
+  const total=sales.reduce((a,s)=>a+s.total,0);
+  const units=sales.reduce((a,s)=>a+s.items.reduce((x,i)=>x+i.qty,0),0);
+  const low=db.products.filter(p=>p.stock<=p.minStock).length;
+  return `<div class="grid three">
+    <div class="card"><div class="muted">Ventas hoy</div><div class="stat">${money(total)}</div></div>
+    <div class="card"><div class="muted">Unidades vendidas</div><div class="stat">${units}</div></div>
+    <div class="card"><div class="muted">Stock bajo</div><div class="stat">${low}</div></div>
+  </div>`;
+}
+function saleHTML(){
+  return `<div class="grid two">
+    <div class="card">
+      <h3>Venta rápida</h3>
+      <input id="searchProd" placeholder="Escribe: refresco, cigarro, picadillo...">
+      <div id="prodGrid" class="product-grid" style="margin-top:12px">
+      ${db.products.filter(p=>p.active).map(p=>`<div class="product" data-add="${p.id}"><b>${p.name}</b><div class="muted">${money(p.price)} · stock ${p.stock}</div></div>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <h3>Ticket</h3>
+      <div id="cart">${cartHTML()}</div>
+    </div>
+  </div>`;
+}
+function cartHTML(){
+  if(!session.cart.length) return '<p class="muted">Todavía no hay productos.</p>';
+  const total=session.cart.reduce((a,i)=>a+i.price*i.qty,0);
+  return `<table><tbody>${session.cart.map(i=>`<tr>
+    <td>${i.name}</td><td><button class="btn" data-minus="${i.id}">−</button> ${i.qty} <button class="btn" data-plus="${i.id}">+</button></td>
+    <td class="right">${money(i.price*i.qty)}</td></tr>`).join('')}</tbody></table>
+    <hr><div class="row" style="justify-content:space-between"><b>Total</b><b class="stat">${money(total)}</b></div>
+    <br><label>Método de pago</label><select id="payMethod"><option>Efectivo</option><option>Tarjeta</option><option>Otro</option></select>
+    <br><br><button class="btn primary" id="checkout">COBRAR Y REGISTRAR</button>`;
+}
+function bindSale(){
+  document.querySelectorAll('[data-add]').forEach(el=>el.onclick=()=>addToCart(+el.dataset.add));
+  const s=document.getElementById('searchProd');
+  if(s) s.oninput=()=>{
+    const q=s.value.toLowerCase();
+    document.querySelectorAll('.product').forEach(p=>p.style.display=p.innerText.toLowerCase().includes(q)?'block':'none')
+  };
+  bindCartButtons();
+}
+function bindCartButtons(){
+  document.querySelectorAll('[data-plus]').forEach(b=>b.onclick=()=>{let i=session.cart.find(x=>x.id==b.dataset.plus);i.qty++;refreshCart()});
+  document.querySelectorAll('[data-minus]').forEach(b=>b.onclick=()=>{let i=session.cart.find(x=>x.id==b.dataset.minus);i.qty--;if(i.qty<=0)session.cart=session.cart.filter(x=>x!==i);refreshCart()});
+  const c=document.getElementById('checkout'); if(c)c.onclick=checkout;
+}
+function refreshCart(){const c=document.getElementById('cart'); if(c){c.innerHTML=cartHTML();bindCartButtons()}}
+function addToCart(id){
+  const p=byId(db.products,id); if(!p||p.stock<=0)return alert('Sin stock');
+  let i=session.cart.find(x=>x.id===id);
+  if(i){if(i.qty>=p.stock)return alert('No hay más stock');i.qty++}
+  else session.cart.push({id:p.id,name:p.name,price:p.price,qty:1});
+  refreshCart();
+}
+function checkout(){
+  if(!activeCash()) return alert('Primero abre la caja.');
+  for(const i of session.cart){const p=byId(db.products,i.id); if(i.qty>p.stock)return alert('Stock insuficiente de '+p.name)}
+  const total=session.cart.reduce((a,i)=>a+i.price*i.qty,0);
+  const sale={id:uid(),date:nowDate(),ts:new Date().toISOString(),userId:session.user.id,payment:document.getElementById('payMethod').value,total,items:structuredClone(session.cart)};
+  db.sales.push(sale);
+  session.cart.forEach(i=>{const p=byId(db.products,i.id);p.stock-=i.qty;db.inventoryMoves.push({id:uid(),ts:new Date().toISOString(),productId:p.id,qty:-i.qty,type:'sale',userId:session.user.id,ref:sale.id})});
+  saveDB(); session.cart=[]; alert('Venta registrada: '+money(total)); render();
+}
+function inventoryHTML(){
+  const owner=session.user.role==='owner';
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h3>Inventario</h3>${owner?'<button class="btn primary" id="newProd">+ Producto</button>':''}</div>
+  <table><thead><tr><th>Producto</th><th>Precio</th><th>Stock</th><th>Mínimo</th>${owner?'<th></th>':''}</tr></thead>
+  <tbody>${db.products.map(p=>`<tr><td>${p.name}</td><td>${money(p.price)}</td><td>${p.stock}</td><td>${p.minStock}</td>${owner?`<td><button class="btn" data-adjust="${p.id}">Ajustar</button></td>`:''}</tr>`).join('')}</tbody></table></div>`;
+}
+function bindInventory(){
+  const np=document.getElementById('newProd');
+  if(np) np.onclick=()=>{
+    const name=prompt('Nombre del producto'); if(!name)return;
+    const price=+prompt('Precio de venta','0')||0; const cost=+prompt('Costo','0')||0; const stock=+prompt('Stock inicial','0')||0; const min=+prompt('Stock mínimo','0')||0;
+    db.products.push({id:uid(),name,category:'General',cost,price,stock,minStock:min,active:true});saveDB();render();
+  };
+  document.querySelectorAll('[data-adjust]').forEach(b=>b.onclick=()=>{
+    const p=byId(db.products,+b.dataset.adjust); const n=+prompt('Nuevo stock para '+p.name,p.stock); if(Number.isNaN(n))return;
+    const diff=n-p.stock; p.stock=n; db.inventoryMoves.push({id:uid(),ts:new Date().toISOString(),productId:p.id,qty:diff,type:'adjust',userId:session.user.id}); saveDB(); render();
+  });
+}
+function cashHTML(){
+  const ac=activeCash();
+  if(!ac) return `<div class="card"><h3>Abrir caja</h3><label>Fondo inicial</label><input id="opening" type="number" step="0.01" value="0"><br><br><button class="btn primary" id="openCash">Abrir caja</button></div>`;
+  const sales=db.sales.filter(s=>s.ts>=ac.openedAt);
+  const cashSales=sales.filter(s=>s.payment==='Efectivo').reduce((a,s)=>a+s.total,0);
+  const expected=ac.opening+cashSales;
+  return `<div class="grid two"><div class="card"><h3>Caja abierta</h3>
+    <p>Apertura: ${new Date(ac.openedAt).toLocaleString()}</p><p>Fondo inicial: <b>${money(ac.opening)}</b></p><p>Ventas efectivo: <b>${money(cashSales)}</b></p><p>Efectivo esperado: <b>${money(expected)}</b></p>
+    <label>Efectivo contado al cierre</label><input id="counted" type="number" step="0.01" value="${expected.toFixed(2)}"><br><br>
+    <button class="btn danger" id="closeCash">Cerrar caja</button></div>
+    <div class="card"><h3>Cuadre de inventario</h3><p class="muted">En esta V1 el sistema muestra existencias teóricas. El dueño puede registrar el conteo físico durante el cierre.</p>
+    <table><thead><tr><th>Producto</th><th>Teórico</th><th>Real</th></tr></thead><tbody>
+    ${db.products.map(p=>`<tr><td>${p.name}</td><td>${p.stock}</td><td><input data-real="${p.id}" type="number" value="${p.stock}"></td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+function bindCash(){
+  const o=document.getElementById('openCash'); if(o)o.onclick=()=>{db.cashSessions.push({id:uid(),openedAt:new Date().toISOString(),opening:+document.getElementById('opening').value||0,openedBy:session.user.id});saveDB();render()};
+  const c=document.getElementById('closeCash'); if(c)c.onclick=()=>{
+    const ac=activeCash(); const sales=db.sales.filter(s=>s.ts>=ac.openedAt); const cashSales=sales.filter(s=>s.payment==='Efectivo').reduce((a,s)=>a+s.total,0); const expected=ac.opening+cashSales;
+    ac.closedAt=new Date().toISOString(); ac.counted=+document.getElementById('counted').value||0; ac.expected=expected; ac.cashDifference=ac.counted-expected; ac.closedBy=session.user.id;
+    ac.inventoryCount=document.querySelectorAll('[data-real]').length?[...document.querySelectorAll('[data-real]')].map(i=>({productId:+i.dataset.real,theoretical:byId(db.products,+i.dataset.real).stock,real:+i.value||0,diff:(+i.value||0)-byId(db.products,+i.dataset.real).stock})):[];
+    saveDB(); alert('Caja cerrada. Diferencia: '+money(ac.cashDifference)); render();
+  };
+}
+function customersHTML(){
+  return `<div class="card"><div class="row" style="justify-content:space-between"><h3>Clientes</h3><button class="btn primary" id="newCustomer">+ Cliente</button></div>
+  <table><tbody>${db.customers.map(c=>`<tr><td>${c.name}</td><td>${c.phone||''}</td></tr>`).join('')||'<tr><td class="muted">No hay clientes.</td></tr>'}</tbody></table></div>`;
+}
+function bindCustomers(){const n=document.getElementById('newCustomer'); if(n)n.onclick=()=>{const name=prompt('Nombre');if(!name)return;const phone=prompt('Teléfono','')||'';db.customers.push({id:uid(),name,phone});saveDB();render()}}
+function reportsHTML(){
+  const owner=session.user.role==='owner';
+  if(!owner) return `<div class="card"><h3>Reportes</h3><p class="muted">Solo disponibles para el dueño.</p></div>`;
+  const total=db.sales.reduce((a,s)=>a+s.total,0);
+  const profit=db.sales.reduce((a,s)=>a+s.items.reduce((x,i)=>{const p=byId(db.products,i.id);return x+(i.price-(p?.cost||0))*i.qty},0),0);
+  return `<div class="grid two"><div class="card"><h3>Resumen</h3><p>Total vendido: <b>${money(total)}</b></p><p>Ganancia estimada: <b>${money(profit)}</b></p><p>Ventas registradas: <b>${db.sales.length}</b></p></div>
+  <div class="card"><h3>Copias de seguridad</h3><button class="btn primary" id="exportDb">Exportar .save</button><br><br><input id="importDb" type="file" accept=".save,.json"></div></div>
+  <div class="card"><h3>Cierres</h3><table><thead><tr><th>Fecha</th><th>Esperado</th><th>Contado</th><th>Diferencia</th></tr></thead><tbody>${db.cashSessions.filter(x=>x.closedAt).map(x=>`<tr><td>${new Date(x.closedAt).toLocaleString()}</td><td>${money(x.expected)}</td><td>${money(x.counted)}</td><td>${money(x.cashDifference)}</td></tr>`).join('')||'<tr><td class="muted">Sin cierres todavía.</td></tr>'}</tbody></table></div>`;
+}
+function bindReports(){
+  const e=document.getElementById('exportDb'); if(e)e.onclick=()=>{
+    const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}); const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`MiTienda_${nowDate()}.save`;a.click();URL.revokeObjectURL(a.href);
+  };
+  const i=document.getElementById('importDb'); if(i)i.onchange=async()=>{const f=i.files[0];if(!f)return;try{db=JSON.parse(await f.text());saveDB();alert('Respaldo restaurado');render()}catch(e){alert('Archivo inválido')}};
+}
+render();
+</script>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{})}
+</script>
+</body>
+</html>
