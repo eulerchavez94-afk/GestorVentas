@@ -1,33 +1,4 @@
-const CACHE='gestorventas-v3';
-const ASSETS=['./','./index.html','./manifest.json'];
-self.addEventListener('install',event=>{
-  self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)));
-});
-self.addEventListener('activate',event=>{
-  event.waitUntil((async()=>{
-    const keys=await caches.keys();
-    await Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)));
-    await self.clients.claim();
-  })());
-});
-self.addEventListener('fetch',event=>{
-  const req=event.request;
-  if(req.method!=='GET') return;
-  if(req.mode==='navigate'){
-    event.respondWith((async()=>{
-      try{
-        const fresh=await fetch(req,{cache:'no-store'});
-        const cache=await caches.open(CACHE);
-        await cache.put('./index.html',fresh.clone());
-        return fresh;
-      }catch(e){
-        return (await caches.match(req)) || (await caches.match('./index.html'));
-      }
-    })());
-    return;
-  }
-  event.respondWith(caches.match(req).then(cached=>cached||fetch(req).then(res=>{
-    const copy=res.clone();caches.open(CACHE).then(c=>c.put(req,copy));return res;
-  })));
-});
+const CACHE='gestorventas-v4';
+self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./','./index.html','./manifest.json'])))});
+self.addEventListener('activate',e=>{e.waitUntil((async()=>{const ks=await caches.keys();await Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)));await self.clients.claim()})())});
+self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;if(e.request.mode==='navigate'){e.respondWith(fetch(e.request,{cache:'no-store'}).then(r=>{const c=r.clone();caches.open(CACHE).then(x=>x.put('./index.html',c));return r}).catch(()=>caches.match('./index.html')));return}e.respondWith(caches.match(e.request).then(c=>c||fetch(e.request)));});
