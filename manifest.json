@@ -1,9 +1,1 @@
-{
-  "name": "Gestor de Ventas Offline",
-  "short_name": "Ventas",
-  "start_url": "./",
-  "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#111827",
-  "icons": []
-}
+{"name":"GestorVentas","short_name":"GestorVentas","start_url":".","display":"standalone","background_color":"#f3f4f6","theme_color":"#111827","lang":"es"}
